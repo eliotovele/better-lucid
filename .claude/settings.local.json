@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.adonisjs.com)",
+      "WebFetch(domain:lucid.adonisjs.com)",
+      "WebFetch(domain:www.better-auth.com)",
+      "Bash(npm run typecheck)"
+    ]
+  }
+}

@@ -1,119 +1,157 @@
-# AdonisJS package starter kit
+# better-lucid
 
-> A boilerplate for creating AdonisJS packages
+> [better-auth](https://www.better-auth.com) database adapter for **AdonisJS 6** + **Lucid ORM**
 
-This repo provides you with a starting point for creating AdonisJS packages. Of course, you can create a package from scratch with your folder structure and workflow. However, using this starter kit can speed up the process, as you have fewer decisions to make.
+Connects better-auth to AdonisJS using Lucid's raw query builder (no Models required). Works with PostgreSQL.
+
+---
+
+## Requirements
+
+| Peer dependency | Version |
+|---|---|
+| `@adonisjs/core` | `^6.2.0` |
+| `@adonisjs/lucid` | `^21.0.0` |
+| `better-auth` | `^1.0.0` |
+| Database | **PostgreSQL** |
+
+---
+
+## Installation
+
+```sh
+npm install better-lucid
+node ace configure better-lucid
+```
+
+The configure script:
+- Publishes a migration to `database/migrations/`
+- Registers `LucidBetterAuthProvider` in `adonisrc.ts`
+- Registers the `betterAuth` named middleware in `start/kernel.ts`
+
+---
 
 ## Setup
 
-- Clone the repo on your computer, or use `giget` to download this repo without the Git history.
-  ```sh
-  npx giget@latest gh:adonisjs/pkg-starter-kit
-  ```
-- Install dependencies.
-- Update the `package.json` file and define the `name`, `description`, `keywords`, and `author` properties.
-- The repo is configured with an MIT license. Feel free to change that if you are not publishing under the MIT license.
+### 1. Create `start/auth.ts`
 
-## Folder structure
+```ts
+import { betterAuth } from 'better-auth'
+import { lucidAdapter } from 'better-lucid'
+import db from '@adonisjs/lucid/services/db'
 
-The starter kit mimics the folder structure of the official packages. Feel free to rename files and folders as per your requirements.
-
-```
-├── providers
-├── src
-├── bin
-├── stubs
-├── configure.ts
-├── index.ts
-├── LICENSE.md
-├── package.json
-├── README.md
-├── tsconfig.json
-├── tsnode.esm.js
+export default betterAuth({
+  database: lucidAdapter(db),
+  emailAndPassword: {
+    enabled: true,
+  },
+  // ...other better-auth options
+})
 ```
 
-- The `configure.ts` file exports the `configure` hook to configure the package using the `node ace configure` command.
-- The `index.ts` file is the main entry point of the package.
-- The `tsnode.esm.js` file runs TypeScript code using TS-Node + SWC. Please read the code comment in this file to learn more.
-- The `bin` directory contains the entry point file to run Japa tests.
-- Learn more about [the `providers` directory](./providers/README.md).
-- Learn more about [the `src` directory](./src/README.md).
-- Learn more about [the `stubs` directory](./stubs/README.md).
+### 2. Run the migration
 
-### File system naming convention
+```sh
+node ace migration:run
+```
 
-We use `snake_case` naming conventions for the file system. The rule is enforced using ESLint. However, turn off the rule and use your preferred naming conventions.
+### 3. Mount the better-auth handler in `start/routes.ts`
 
-## Peer dependencies
+```ts
+import router from '@adonisjs/core/services/router'
 
-The starter kit has a peer dependency on `@adonisjs/core@6`. Since you are creating a package for AdonisJS, you must make it against a specific version of the framework core.
+router.all('/api/auth/*', async ({ request, response }) => {
+  const { default: auth } = await import('#start/auth')
+  return auth.handler(request.request, response.response)
+})
+```
 
-If your package needs Lucid to be functional, you may install `@adonisjs/lucid` as a development dependency and add it to the list of `peerDependencies`.
+### 4. Protect routes with the middleware
 
-As a rule of thumb, packages installed in the user application should be part of the `peerDependencies` of your package and not the main dependency.
+```ts
+import router from '@adonisjs/core/services/router'
+import { middleware } from '#start/kernel'
 
-For example, if you install `@adonisjs/core` as a main dependency, then essentially, you are importing a separate copy of `@adonisjs/core` and not sharing the one from the user application. Here is a great article explaining [peer dependencies](https://blog.bitsrc.io/understanding-peer-dependencies-in-javascript-dbdb4ab5a7be).
+// Apply to a single route
+router.get('/me', async ({ auth, response }) => {
+  if (!auth.user) return response.unauthorized()
+  return auth.user
+}).use(middleware.betterAuth())
 
-## Published files
+// Apply to a group
+router.group(() => {
+  router.get('/profile', ProfileController)
+  router.put('/settings', SettingsController)
+}).use(middleware.betterAuth())
+```
 
-Instead of publishing your repo's source code to npm, you must cherry-pick files and folders to publish only the required files.
+The middleware sets `ctx.auth`:
 
-The cherry-picking uses the `files` property inside the `package.json` file. By default, we publish the following files and folders.
+```ts
+import type { BetterAuthContext } from 'better-lucid/types'
 
-```json
-{
-  "files": ["build/src", "build/providers", "build/stubs", "build/index.d.ts", "build/index.js", "build/configure.d.ts", "build/configure.js"]
+// ctx.auth.user    — BetterAuthUser | null
+// ctx.auth.session — BetterAuthSession | null
+```
+
+---
+
+## Adapter configuration
+
+```ts
+import { lucidAdapter } from 'better-lucid'
+import type { LucidAdapterConfig } from 'better-lucid'
+
+const config: LucidAdapterConfig = {
+  /** Log all adapter queries to the console. Default: false */
+  debugLogs: true,
+
+  /** Use plural table names ("users" instead of "user"). Default: false */
+  usePlural: false,
 }
+
+lucidAdapter(db, config)
 ```
 
-If you create additional folders or files, mention them inside the `files` array.
+---
 
-## Exports
+## Plugin schema sync
 
-[Node.js Subpath exports](https://nodejs.org/api/packages.html#subpath-exports) allows you to define the exports of your package regardless of the folder structure. This starter kit defines the following exports.
+better-auth plugins add new tables and columns. After adding a plugin to `start/auth.ts`, regenerate an incremental migration:
 
-```json
-{
-  "exports": {
-    ".": "./build/index.js",
-    "./types": "./build/src/types.js"
-  }
-}
+```ts
+// In any AdonisJS route, command, or script:
+const { default: auth } = await import('#start/auth')
+await auth.api.generateSchema()
+// → writes database/migrations/<timestamp>_better_auth_schema.ts
 ```
 
-- The dot `.` export is the main export.
-- The `./types` exports all the types defined inside the `./build/src/types.js` file (the compiled output).
+Then run it:
 
-Feel free to change the exports as per your requirements.
+```sh
+node ace migration:run
+```
 
-## Testing
+The generator diffs your live database against the current config and emits only the changes:
 
-We configure the [Japa test runner](https://japa.dev/) with this starter kit. Japa is used in AdonisJS applications as well. Just run one of the following commands to execute tests.
+- **New plugin tables** → `CREATE TABLE`
+- **New plugin columns on existing tables** → `ALTER TABLE ADD COLUMN`
+- **Removed columns / tables** → `// WARNING:` comments — destructive operations are always run manually
 
-- `npm run test`: This command will first lint the code using ESlint and then run tests and report the test coverage using [c8](https://github.com/bcoe/c8).
-- `npm run quick:test`: Runs only the tests without linting or coverage reporting.
+---
 
-The starter kit also has a Github workflow file to run tests using Github Actions. The tests are executed against `Node.js 20.x` and `Node.js 21.x` versions on both Linux and Windows. Feel free to edit the workflow file in the `.github/workflows` directory.
+## How it works
 
-## TypeScript workflow
+`lucidAdapter(db)` returns an [AdapterFactory](https://www.better-auth.com/docs/concepts/database#adapters) backed by Lucid's raw query builder. It handles:
 
-- The starter kit uses [tsc](https://www.typescriptlang.org/docs/handbook/compiler-options.html) for compiling the TypeScript to JavaScript when publishing the package.
-- [TS-Node](https://typestrong.org/ts-node/) and [SWC](https://swc.rs/) are used to run tests without compiling the source code.
-- The `tsconfig.json` file is extended from [`@adonisjs/tsconfig`](https://github.com/adonisjs/tooling-config/tree/main/packages/typescript-config) and uses the `NodeNext` module system. Meaning the packages are written using ES modules.
-- You can perform type checking without compiling the source code using the `npm run type check` script.
+- All CRUD operations (create, findOne, findMany, update, updateMany, delete, deleteMany, count)
+- Full WHERE clause support: `eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in`, `not_in`, `contains`, `starts_with`, `ends_with`, `AND`/`OR` connectors
+- Transactions (delegated to `db.transaction()`)
+- Schema generation for fresh and incremental migrations (via `createSchema`)
+- `camelCase` schema keys → `snake_case` column names automatically
 
-Feel free to explore the `tsconfig.json` file for all the configured options.
+---
 
-## ESLint and Prettier setup
+## License
 
-The starter kit configures ESLint and Prettier
-using our [shared config](https://github.com/adonisjs/tooling-config/tree/main/packages).
-ESLint configuration is stored within the `eslint.config.js` file.
-Prettier configuration is stored within the `package.json` file.
-Feel free to change the configuration, use custom plugins, or remove both tools altogether.
-
-## Using Stale bot
-
-The [Stale bot](https://github.com/apps/stale) is a Github application that automatically marks issues and PRs as stale and closes after a specific duration of inactivity.
-
-Feel free to delete the `.github/stale.yml` and `.github/lock.yml` files if you decide not to use the Stale bot.
+MIT

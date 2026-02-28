@@ -1,0 +1,80 @@
+import { BaseSchema } from '@adonisjs/lucid/schema'
+
+export default class extends BaseSchema {
+  async up() {
+    // ----------------------------------------------------------------
+    // user table
+    // ----------------------------------------------------------------
+    this.schema.createTable('user', (table) => {
+      table.string('id').primary().notNullable()
+      table.string('name').notNullable()
+      table.string('email').notNullable().unique()
+      table.boolean('email_verified').defaultTo(false).notNullable()
+      table.string('image').nullable()
+      table.timestamp('created_at', { useTz: true }).notNullable()
+      table.timestamp('updated_at', { useTz: true }).notNullable()
+    })
+
+    // ----------------------------------------------------------------
+    // session table
+    // ----------------------------------------------------------------
+    this.schema.createTable('session', (table) => {
+      table.string('id').primary().notNullable()
+      table.timestamp('expires_at', { useTz: true }).notNullable()
+      table.string('token').notNullable().unique()
+      table.timestamp('created_at', { useTz: true }).notNullable()
+      table.timestamp('updated_at', { useTz: true }).notNullable()
+      table.string('ip_address').nullable()
+      table.string('user_agent').nullable()
+      table
+        .string('user_id')
+        .notNullable()
+        .references('id')
+        .inTable('user')
+        .onDelete('CASCADE')
+    })
+
+    // ----------------------------------------------------------------
+    // account table
+    // ----------------------------------------------------------------
+    this.schema.createTable('account', (table) => {
+      table.string('id').primary().notNullable()
+      table.string('account_id').notNullable()
+      table.string('provider_id').notNullable()
+      table
+        .string('user_id')
+        .notNullable()
+        .references('id')
+        .inTable('user')
+        .onDelete('CASCADE')
+      table.text('access_token').nullable()
+      table.text('refresh_token').nullable()
+      table.text('id_token').nullable()
+      table.timestamp('access_token_expires_at', { useTz: true }).nullable()
+      table.timestamp('refresh_token_expires_at', { useTz: true }).nullable()
+      table.string('scope').nullable()
+      table.text('password').nullable()
+      table.timestamp('created_at', { useTz: true }).notNullable()
+      table.timestamp('updated_at', { useTz: true }).notNullable()
+    })
+
+    // ----------------------------------------------------------------
+    // verification table
+    // ----------------------------------------------------------------
+    this.schema.createTable('verification', (table) => {
+      table.string('id').primary().notNullable()
+      table.string('identifier').notNullable()
+      table.text('value').notNullable()
+      table.timestamp('expires_at', { useTz: true }).notNullable()
+      table.timestamp('created_at', { useTz: true }).nullable()
+      table.timestamp('updated_at', { useTz: true }).nullable()
+    })
+  }
+
+  async down() {
+    this.schema.dropTable('verification')
+    this.schema.dropTable('account')
+    this.schema.dropTable('session')
+    this.schema.dropTable('user')
+  }
+}
